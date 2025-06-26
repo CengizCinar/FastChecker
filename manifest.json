@@ -1,0 +1,36 @@
+{
+   "manifest_version": 3,
+   "name": "FastChecker",
+   "version": "1.0.0",
+   "description": "Amazon SP API ASIN Checker",
+   "author": "FastChecker Team",
+   "permissions": [
+      "storage",
+      "sidePanel",
+      "activeTab"
+   ],
+   "host_permissions": [
+      "https://sellingpartnerapi-na.amazon.com/*",
+      "https://sellingpartnerapi-eu.amazon.com/*",
+      "https://sellingpartnerapi-fe.amazon.com/*",
+      "https://amazon.com/*",
+      "https://*.amazon.com/*",
+    "https://fastcheckerwebsocket.glitch.me/*"
+   ],
+   "background": {
+      "service_worker": "background.js"
+   },
+   "side_panel": {
+      "default_path": "sidepanel.html"
+   },
+   "action": {
+      "default_title": "FastChecker"
+   },
+   "icons": {
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+   }
+}
+
