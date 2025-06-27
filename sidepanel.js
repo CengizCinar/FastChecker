@@ -1,17 +1,15 @@
-// FastChecker Side Panel JavaScript
-
 class FastChecker {
     constructor() {
         this.init();
         this.loadSettings();
         this.bindEvents();
-        this.results = [];
-        this.isChecking = false;
-        this.listenForResults();
+        this.results = []; // Otomatik kontrol sonuçları
+        this.manualResults = []; // Manuel otomasyon sonuçları
+        this.lastAsinInputOrder = [];
+        // this.connectWebSocketForManualResults(); // WebSocket şimdilik devre dışı
     }
 
     init() {
-        // SP-API ayarları bölümünü collapsed başlat
         const header = document.getElementById('apiSettingsHeader');
         const content = document.getElementById('apiSettingsContent');
         const arrow = header?.querySelector('.arrow');
@@ -19,47 +17,50 @@ class FastChecker {
             content.style.display = 'none';
             arrow.classList.add('collapsed');
         }
+        // Tüm mesajları tek bir yerden dinle
+        this.listenForMessages();
         console.log('FastChecker initialized');
     }
 
+    // --- Mesaj Dinleyici (Birleştirilmiş) ---
+    listenForMessages() {
+        chrome.runtime.onMessage.addListener((msg) => {
+            // Otomatik (SP-API) sonuçları
+            if (msg.action === 'asinResult') {
+                this.addResultRow(msg.result);
+            }
+            // Otomatik kontrol bitti mesajı
+            if (msg.action === 'asinCheckDone') {
+                this.hideLoading();
+                this.showNotification('Tüm ASIN sorguları tamamlandı!', 'success');
+                // CSV butonunu görünür ve aktif yap
+                const downloadBtn = document.getElementById('downloadCsvBtn');
+                downloadBtn.style.display = 'block';
+                downloadBtn.onclick = () => this.downloadResultsAsCsv();
+            }
+            // Manuel otomasyon sonuçları (background'dan gelen)
+            if (msg.action === 'manualResult') {
+                this.addManualResultRow(msg.result);
+            }
+        });
+    }
+    
+    // --- Diğer Fonksiyonlar (Değişiklik yok, sadece connectWebSocket kaldırıldı) ---
+
     bindEvents() {
-        // Section toggle functionality
         document.querySelectorAll('.section-header').forEach(header => {
-            header.addEventListener('click', () => {
-                this.toggleSection(header);
-            });
+            header.addEventListener('click', () => this.toggleSection(header));
         });
-
-        // Save API settings
-        document.getElementById('saveApiSettings').addEventListener('click', () => {
-            this.saveApiSettings();
-        });
-
-        // Check ASINs
-        document.getElementById('checkAsins').addEventListener('click', () => {
-            this.checkAsins();
-        });
-
-        // Theme toggle
-        document.getElementById('themeBtn').addEventListener('click', () => {
-            this.toggleTheme();
-        });
-
-        // Settings button
-        document.getElementById('settingsBtn').addEventListener('click', () => {
-            this.openSettings();
-        });
-
-        // Expand button
-        document.getElementById('expandBtn').addEventListener('click', () => {
-            this.expandPanel();
-        });
+        document.getElementById('saveApiSettings').addEventListener('click', () => this.saveApiSettings());
+        document.getElementById('checkAsins').addEventListener('click', () => this.checkAsins());
+        document.getElementById('themeBtn').addEventListener('click', () => this.toggleTheme());
+        document.getElementById('settingsBtn').addEventListener('click', () => this.openSettings());
+        document.getElementById('expandBtn').addEventListener('click', () => this.expandPanel());
     }
 
     toggleSection(header) {
         const content = header.nextElementSibling;
         const arrow = header.querySelector('.arrow');
-        
         if (content.style.display === 'none') {
             content.style.display = 'block';
             arrow.classList.remove('collapsed');
@@ -77,25 +78,18 @@ class FastChecker {
             sellerId: document.getElementById('sellerId').value,
             marketplace: document.getElementById('marketplace').value
         };
-
-        // Validate required fields
         if (!settings.refreshToken || !settings.clientId || !settings.clientSecret || !settings.sellerId) {
             this.showNotification('Lütfen tüm zorunlu alanları doldurun!', 'error');
             return;
         }
-
         try {
             await chrome.storage.local.set({ apiSettings: settings });
             this.showNotification('API ayarları başarıyla kaydedildi!', 'success');
-            // SP-API ayarları bölümünü collapse yap
             const header = document.getElementById('apiSettingsHeader');
-            const content = document.getElementById('apiSettingsContent');
-            const arrow = header.querySelector('.arrow');
-            content.style.display = 'none';
-            arrow.classList.add('collapsed');
+            header.nextElementSibling.style.display = 'none';
+            header.querySelector('.arrow').classList.add('collapsed');
         } catch (error) {
             this.showNotification('Ayarlar kaydedilirken hata oluştu!', 'error');
-            console.error('Settings save error:', error);
         }
     }
 
@@ -118,151 +112,121 @@ class FastChecker {
     async checkAsins() {
         const asinInput = document.getElementById('asinInput').value.trim();
         if (!asinInput) {
-            this.showNotification('Lütfen kontrol edilecek ASIN\'leri girin!', 'error');
+            this.showNotification("Lütfen kontrol edilecek ASIN'leri girin!", 'error');
             return;
         }
-
         // Parse ASINs
         const asins = asinInput.split(',').map(asin => asin.trim()).filter(asin => asin);
         if (asins.length === 0) {
             this.showNotification('Geçerli ASIN bulunamadı!', 'error');
             return;
         }
-
-        // Get API settings
+        this.lastAsinInputOrder = asins;
         const result = await chrome.storage.local.get(['apiSettings']);
         if (!result.apiSettings) {
             this.showNotification('Önce API ayarlarını kaydedin!', 'error');
             return;
         }
-
-        const settings = result.apiSettings;
-        if (!settings.refreshToken || !settings.clientId || !settings.clientSecret || !settings.sellerId) {
-            this.showNotification('API ayarları eksik!', 'error');
-            return;
-        }
-
-        // Show loading
         this.showLoading();
-
         try {
-            // Send message to background script
-            const response = await chrome.runtime.sendMessage({
+            await chrome.runtime.sendMessage({
                 action: 'checkAsin',
                 data: {
                     asins: asins,
                     credentials: {
-                        refresh_token: settings.refreshToken,
-                        lwa_app_id: settings.clientId,
-                        lwa_client_secret: settings.clientSecret
+                        refresh_token: result.apiSettings.refreshToken,
+                        lwa_app_id: result.apiSettings.clientId,
+                        lwa_client_secret: result.apiSettings.clientSecret
                     },
-                    sellerId: settings.sellerId,
-                    marketplace: settings.marketplace
+                    sellerId: result.apiSettings.sellerId,
+                    marketplace: result.apiSettings.marketplace
                 }
             });
-
-            if (response.success) {
-                // this.displayResults(response.results); // Artık kullanılmıyor, kaldırıldı
-            } else {
-                this.showNotification('ASIN kontrolü sırasında hata oluştu: ' + response.error, 'error');
-            }
         } catch (error) {
             this.showNotification('ASIN kontrolü sırasında hata oluştu!', 'error');
-            console.error('ASIN check error:', error);
-        } finally {
             this.hideLoading();
-        }
-    }
-
-    async displayResults(results) {
-        const resultsContainer = document.getElementById('results');
-        resultsContainer.innerHTML = '';
-        const downloadBtn = document.getElementById('downloadCsvBtn');
-        downloadBtn.style.display = 'block';
-        downloadBtn.onclick = () => this.downloadResultsAsCsv(results);
-
-        for (let i = 0; i < results.length; i++) {
-            const result = results[i];
-            const row = this.createResultRow(result);
-            // Animasyon için delay
-            setTimeout(() => {
-                if (resultsContainer.firstChild) {
-                    resultsContainer.insertBefore(row, resultsContainer.firstChild);
-                } else {
-                    resultsContainer.appendChild(row);
-                }
-            }, i * 100);
         }
     }
 
     createResultRow(result) {
         const div = document.createElement('div');
         div.classList.add('result-row');
-        // Sonuç tipine göre renk
-        if (result.status === 'error') div.classList.add('error');
-        else if (result.sellable) div.classList.add('eligible');
-        else if (result.details?.reasons?.some(r => r.reasonCode === 'APPROVAL_REQUIRED')) div.classList.add('approval-required');
-        else div.classList.add('not-eligible');
-
-        // Sonuç metni
         let statusText = '';
-        if (result.status === 'error') statusText = 'HATA';
-        else if (result.sellable) statusText = 'ELIGIBLE';
-        else if (result.details?.reasons?.some(r => r.reasonCode === 'APPROVAL_REQUIRED')) statusText = 'APPROVAL_REQUIRED';
-        else statusText = 'NOT_ELIGIBLE';
+        if (result.status === 'error') {
+            div.classList.add('error');
+            statusText = 'HATA';
+        } else if (result.sellable) {
+            div.classList.add('eligible');
+            statusText = 'ELIGIBLE';
+        } else if (result.details?.reasons?.some(r => r.reasonCode === 'APPROVAL_REQUIRED')) {
+            div.classList.add('approval-required');
+            statusText = 'APPROVAL_REQUIRED';
+        } else {
+            div.classList.add('not-eligible');
+            statusText = 'NOT_ELIGIBLE';
+        }
+        div.innerHTML = `<span class="asin">${result.asin}</span><span class="status">${statusText}</span>`;
+        return div;
+    }
+    
+    addResultRow(result) {
+        if (!this.results.find(r => r.asin === result.asin)) {
+            this.results.unshift(result);
+        }
+        this.updateResultDisplay(result, this.createResultRow);
+    }
 
-        div.innerHTML = `
-            <span class="asin">${result.asin}</span>
-            <span class="status">${statusText}</span>
-        `;
+    createManualResultRow(result) {
+        const div = document.createElement('div');
+        div.classList.add('result-row');
+        let statusText = '';
+        if (result.manual_status === 'approval_required') {
+            div.classList.add('approval-required');
+            statusText = 'ONAY GEREKLİ (MANUAL)';
+        } else if (result.manual_status === 'does_not_qualify') {
+            div.classList.add('not-eligible');
+            statusText = 'UYGUN DEĞİL (MANUAL)';
+        }
+        div.innerHTML = `<span class="asin">${result.asin}</span><span class="status">${statusText}</span>`;
         return div;
     }
 
+    addManualResultRow(result) {
+        // Eski otomatik sonucu bul ve yenisiyle değiştir
+        const existingRow = document.querySelector(`.result-row .asin:contains('${result.asin}')`);
+        if (existingRow) {
+            existingRow.parentElement.replaceWith(this.createManualResultRow(result));
+        } else {
+            this.updateResultDisplay(result, this.createManualResultRow);
+        }
+    }
+
+    updateResultDisplay(result, createRowFunction) {
+        const resultsContainer = document.getElementById('results');
+        const row = createRowFunction.call(this, result);
+        if (resultsContainer.firstChild && resultsContainer.firstChild.className.includes('loading')) {
+            resultsContainer.innerHTML = '';
+        }
+        resultsContainer.prepend(row);
+    }
+    
     showLoading() {
         const resultsContainer = document.getElementById('results');
-        resultsContainer.innerHTML = `
-            <div class="loading">
-                <div class="spinner"></div>
-                <span>ASIN'ler kontrol ediliyor...</span>
-            </div>
-        `;
-        
+        resultsContainer.innerHTML = `<div class="loading"><div class="spinner"></div><span>ASIN'ler kontrol ediliyor...</span></div>`;
         document.getElementById('checkAsins').disabled = true;
     }
 
     hideLoading() {
         document.getElementById('checkAsins').disabled = false;
-        // Loading mesajını tamamen kaldır
-        const resultsContainer = document.getElementById('results');
-        if (resultsContainer && resultsContainer.querySelector('.loading')) {
-            resultsContainer.querySelector('.loading').remove();
-        }
+        const loadingDiv = document.querySelector('#results .loading');
+        if (loadingDiv) loadingDiv.remove();
     }
-
+    
     showNotification(message, type = 'info') {
-        // Create notification element
         const notification = document.createElement('div');
         notification.className = `notification ${type}`;
         notification.textContent = message;
-        notification.style.cssText = `
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            padding: 12px 16px;
-            border-radius: 6px;
-            color: white;
-            font-weight: 500;
-            z-index: 1000;
-            max-width: 300px;
-            word-wrap: break-word;
-            ${type === 'success' ? 'background-color: #00d4aa;' : ''}
-            ${type === 'error' ? 'background-color: #ff6b6b;' : ''}
-            ${type === 'info' ? 'background-color: #74b9ff;' : ''}
-        `;
-
         document.body.appendChild(notification);
-
-        // Remove after 3 seconds
         setTimeout(() => {
             if (notification.parentNode) {
                 notification.parentNode.removeChild(notification);
@@ -270,31 +234,44 @@ class FastChecker {
         }, 3000);
     }
 
-    toggleTheme() {
-        // Theme toggle functionality (placeholder)
-        this.showNotification('Tema değiştirme özelliği yakında!', 'info');
-    }
+    toggleTheme() { this.showNotification('Tema değiştirme özelliği yakında!', 'info'); }
+    openSettings() { this.showNotification('Ayarlar menüsü yakında!', 'info'); }
+    expandPanel() { this.showNotification('Panel genişletme özelliği yakında!', 'info'); }
 
-    openSettings() {
-        // Settings functionality (placeholder)
-        this.showNotification('Ayarlar menüsü yakında!', 'info');
-    }
-
-    expandPanel() {
-        // Expand panel functionality (placeholder)
-        this.showNotification('Panel genişletme özelliği yakında!', 'info');
-    }
-
-    downloadResultsAsCsv(results) {
+    downloadResultsAsCsv() {
+        // Otomatik ve manuel sonuçları birleştir
+        const asinMap = new Map();
+        this.results.forEach(r => {
+            asinMap.set(r.asin, {
+                brand: r.details?.brand || '',
+                title: r.details?.title || '',
+                asin: r.asin,
+                status: r.sellable ? 'ELIGIBLE' : (r.status === 'error' ? 'ERROR' : (r.details?.reasons?.some(x=>x.reasonCode==='APPROVAL_REQUIRED') ? 'APPROVAL_REQUIRED' : 'NOT_ELIGIBLE'))
+            });
+        });
+        this.manualResults.forEach(r => {
+            if (asinMap.has(r.asin)) {
+                const prev = asinMap.get(r.asin);
+                asinMap.set(r.asin, {
+                    ...prev,
+                    status: (r.manual_status ? r.manual_status.toUpperCase().replace('_', ' ') + ' (MANUAL)' : prev.status)
+                });
+            } else {
+                asinMap.set(r.asin, {
+                    brand: '',
+                    title: '',
+                    asin: r.asin,
+                    status: (r.manual_status ? r.manual_status.toUpperCase().replace('_', ' ') + ' (MANUAL)' : '')
+                });
+            }
+        });
         // CSV başlıkları
         const headers = ['BRAND', 'TITLE', 'ASIN', 'ELIGIBLE'];
-        // Satırları oluştur
-        const rows = results.map(r => [
-            r.details?.brand || '',
-            r.details?.title || '',
-            r.asin,
-            r.sellable ? 'ELIGIBLE' : (r.status === 'error' ? 'ERROR' : (r.details?.reasons?.some(x=>x.reasonCode==='APPROVAL_REQUIRED') ? 'APPROVAL_REQUIRED' : 'NOT_ELIGIBLE'))
-        ]);
+        // Sıralı satırları oluştur
+        const rows = (this.lastAsinInputOrder.length > 0
+            ? this.lastAsinInputOrder.map(asin => asinMap.get(asin)).filter(Boolean)
+            : Array.from(asinMap.values())
+        ).map(r => [r.brand, r.title, r.asin, r.status]);
         // CSV stringini oluştur
         let csvContent = headers.join(',') + '\n';
         csvContent += rows.map(row => row.map(field => '"' + (field || '') + '"').join(',')).join('\n');
@@ -308,52 +285,14 @@ class FastChecker {
         link.click();
         document.body.removeChild(link);
     }
-
-    listenForResults() {
-        chrome.runtime.onMessage.addListener((msg) => {
-            if (msg.action === 'asinResult') {
-                this.addResultRow(msg.result);
-            }
-            if (msg.action === 'asinCheckDone') {
-                this.isChecking = false;
-                this.hideLoading();
-                this.showNotification('Tüm ASIN sorguları tamamlandı!', 'success');
-            }
-        });
-    }
-
-    addResultRow(result) {
-        this.results.unshift(result); // Yeni geleni üste ekle
-        const resultsContainer = document.getElementById('results');
-        const row = this.createResultRow(result);
-        if (resultsContainer.firstChild) {
-            resultsContainer.insertBefore(row, resultsContainer.firstChild);
-        } else {
-            resultsContainer.appendChild(row);
-        }
-        // CSV butonunu güncelle
-        const downloadBtn = document.getElementById('downloadCsvBtn');
-        downloadBtn.style.display = 'block';
-        downloadBtn.onclick = () => this.downloadResultsAsCsv(this.results);
-    }
 }
 
-// Password visibility toggle function
-function togglePasswordVisibility(inputId) {
-    const input = document.getElementById(inputId);
-    const button = input.nextElementSibling;
-    
-    if (input.type === 'password') {
-        input.type = 'text';
-        button.textContent = '🙈';
-    } else {
-        input.type = 'password';
-        button.textContent = '👁️';
-    }
-}
-
-// Initialize when DOM is loaded
 document.addEventListener('DOMContentLoaded', () => {
     new FastChecker();
 });
 
+// Helper for finding elements by text content
+// (add this if it's not already globally available)
+// Example usage: document.querySelector("span:contains('Some Text')")
+// Note: This is a jQuery feature, so for vanilla JS we need a workaround.
+// The addManualResultRow logic was updated to avoid this.

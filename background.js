@@ -1,56 +1,38 @@
-// Background script for FastChecker extension
-
 // Import SP API helper
 importScripts('sp-api-helper.js');
 
+// --- ANA İŞLEVLER ---
+
 chrome.runtime.onInstalled.addListener(() => {
     console.log('FastChecker extension installed');
+    // WebSocket bağlantısı şimdilik devre dışı
+    // connectWebSocket();
 });
 
-// Handle extension icon click
 chrome.action.onClicked.addListener((tab) => {
-    // Open side panel
     chrome.sidePanel.open({ tabId: tab.id });
 });
 
-// Listen for messages from content script or side panel
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'checkAsin') {
         handleAsinCheck(request.data, sendResponse);
-        return true; // Keep message channel open for async response
+        return true;
     }
 });
 
 async function handleAsinCheck(data, sendResponse) {
     try {
         const { asins, credentials, sellerId, marketplace } = data;
-        const results = [];
         const spApiHelper = new SPAPIHelper();
-
-        // Glitch sunucumuzun "mektup atma" adresi
         const postaKutusuAdresi = "https://fastcheckerwebsocket.glitch.me/mektup-at";
 
         for (let i = 0; i < asins.length; i++) {
             const asin = asins[i];
-            let result;
-            try {
-                result = await spApiHelper.checkASINSellability(asin, credentials, sellerId, marketplace);
-            } catch (error) {
-                result = {
-                    asin: asin,
-                    status: 'error',
-                    sellable: false,
-                    message: error.message,
-                    details: null
-                };
-            }
-            results.push(result);
+            let result = await spApiHelper.checkASINSellability(asin, credentials, sellerId, marketplace);
 
-            // Sonucun "APPROVAL_REQUIRED" olup olmadığını kontrol et
             const isApprovalRequired = result.details?.reasons?.some(r => r.reasonCode === 'APPROVAL_REQUIRED');
 
             if (isApprovalRequired) {
-                // Eğer onay gerekiyorsa, eski sendMessage yerine sunucuya fetch ile istek gönderiyoruz.
                 fetch(postaKutusuAdresi, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -58,18 +40,50 @@ async function handleAsinCheck(data, sendResponse) {
                 }).catch(error => console.error('Sunucuya gönderirken hata:', error));
             }
 
-            // Her sonucu anında sidepanel'a gönder (Bu kısım aynı kalıyor)
-            chrome.runtime.sendMessage({ action: 'asinResult', result });
-            
-            // Her ASIN sorgusu arasında bekleme
+            chrome.runtime.sendMessage({ action: 'asinResult', result: result });
+
             if (i < asins.length - 1) {
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
         }
-        // Tüm ASIN'ler bittiğinde bitti mesajı gönder
         chrome.runtime.sendMessage({ action: 'asinCheckDone' });
-        sendResponse({ success: true }); // Sadece işlemin bittiğini bildir
+        sendResponse({ success: true });
     } catch (error) {
         sendResponse({ success: false, error: error.message });
     }
 }
+
+// --- YENİ WEBSOCKET DİNLEYİCİSİ BÖLÜMÜ ---
+
+// function connectWebSocket() {
+//     const wsUrl = "wss://fastcheckerwebsocket.glitch.me";
+//     let ws = new WebSocket(wsUrl);
+//
+//     ws.onopen = () => {
+//         console.log("BACKGROUND: WebSocket bağlantısı kuruldu (manual sonuçlar için)");
+//     };
+//
+//     ws.onmessage = (event) => {
+//         try {
+//             const msg = JSON.parse(event.data);
+//             // Gelen mesajın formatını kontrol et
+//             if (msg.type === 'manual-result' && msg.asin && msg.manual_status) {
+//                 console.log("BACKGROUND: Manuel sonuç alındı, sidepanel'e gönderiliyor:", msg);
+//                 // Sonucu sidepanel'e ilet
+//                 chrome.runtime.sendMessage({ action: 'manualResult', result: msg });
+//             }
+//         } catch (e) {
+//             console.error('BACKGROUND: WebSocket mesajı işlenemedi:', e);
+//         }
+//     };
+//
+//     ws.onclose = () => {
+//         console.warn("BACKGROUND: WebSocket bağlantısı koptu, 10 sn sonra tekrar denenecek.");
+//         setTimeout(connectWebSocket, 10000);
+//     };
+//
+//     ws.onerror = (err) => {
+//         console.error("BACKGROUND: WebSocket hatası:", err);
+//         ws.close(); // Hata durumunda bağlantıyı kapatır, onclose yeniden bağlanmayı tetikler.
+//     };
+// }
