@@ -1,6 +1,5 @@
 <!DOCTYPE html>
-<html lang="tr">
-<head>
+<html lang="en"> <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FastChecker</title>
@@ -12,6 +11,7 @@
             <div class="header-top">
                 <h1 class="title">FastChecker</h1>
                 <div class="header-icons">
+                    <button class="icon-btn" id="langBtn">🇹🇷</button>
                     <button class="icon-btn" id="settingsBtn">⚙️</button>
                     <button class="icon-btn" id="themeBtn">🌙</button>
                     <button class="icon-btn" id="expandBtn">↗️</button>
@@ -24,34 +24,33 @@
         </div>
 
         <div class="content">
-            <!-- SP-API Ayarları -->
             <div class="section">
                 <div class="section-header" id="apiSettingsHeader">
-                    <span>🔧 SP-API Ayarları</span>
+                    <span data-i18n-key="apiSettingsHeader">SP-API Settings</span>
                     <span class="arrow">▼</span>
                 </div>
                 <div class="section-content" id="apiSettingsContent">
                     <div class="form-group">
-                        <label>Refresh Token: *</label>
-                        <input type="password" id="refreshToken" placeholder="Refresh Token girin">
+                        <label data-i18n-key="refreshTokenLabel">Refresh Token: *</label>
+                        <input type="password" id="refreshToken" data-i18n-placeholder="enterRefreshToken">
                         <button class="toggle-visibility" onclick="togglePasswordVisibility('refreshToken')">👁️</button>
                     </div>
                     <div class="form-group">
-                        <label>Client ID: *</label>
-                        <input type="password" id="clientId" placeholder="LWA App ID girin">
+                        <label data-i18n-key="clientIdLabel">Client ID: *</label>
+                        <input type="password" id="clientId" data-i18n-placeholder="enterLwaAppId">
                         <button class="toggle-visibility" onclick="togglePasswordVisibility('clientId')">👁️</button>
                     </div>
                     <div class="form-group">
-                        <label>Client Secret: *</label>
-                        <input type="password" id="clientSecret" placeholder="LWA Client Secret girin">
+                        <label data-i18n-key="clientSecretLabel">Client Secret: *</label>
+                        <input type="password" id="clientSecret" data-i18n-placeholder="enterLwaClientSecret">
                         <button class="toggle-visibility" onclick="togglePasswordVisibility('clientSecret')">👁️</button>
                     </div>
                     <div class="form-group">
-                        <label>Seller ID: *</label>
-                        <input type="text" id="sellerId" placeholder="Seller ID girin">
+                        <label data-i18n-key="sellerIdLabel">Seller ID: *</label>
+                        <input type="text" id="sellerId" data-i18n-placeholder="enterSellerId">
                     </div>
                     <div class="form-group">
-                        <label>Marketplace:</label>
+                        <label data-i18n-key="marketplaceLabel">Marketplace:</label>
                         <select id="marketplace">
                             <option value="US">Amazon.com (US)</option>
                             <option value="CA">Amazon.ca (CA)</option>
@@ -75,23 +74,22 @@
                             <option value="SG">Amazon.sg (SG)</option>
                         </select>
                     </div>
-                    <button class="save-btn" id="saveApiSettings">Ayarları Kaydet</button>
+                    <button class="save-btn" id="saveApiSettings" data-i18n-key="saveSettingsBtn">Save Settings</button>
                 </div>
             </div>
 
-            <!-- ASIN Kontrol -->
             <div class="section">
                 <div class="section-header" id="asinCheckHeader">
-                    <span>🔍 ASIN Kontrol</span>
+                    <span data-i18n-key="asinCheckHeader">ASIN Control</span>
                     <span class="arrow">▼</span>
                 </div>
                 <div class="section-content" id="asinCheckContent">
                     <div class="form-group">
-                        <label>ASIN'ler (virgülle ayırın):</label>
-                        <textarea id="asinInput" placeholder="B0C31QBVQ1, B0DRW7WRX3, B0052EBJF4" rows="3"></textarea>
+                        <label data-i18n-key="asinsLabel">ASINs (comma separated):</label>
+                        <textarea id="asinInput" data-i18n-placeholder="asinsPlaceholder" rows="3"></textarea>
                     </div>
-                    <button class="check-btn" id="checkAsins">Kontrol Et</button>
-                    <button class="check-btn" id="downloadCsvBtn" style="margin-top: 10px; display: none;">Sonuçları CSV Olarak İndir</button>
+                    <button class="check-btn" id="checkAsins" data-i18n-key="checkAsinsBtn">Check</button>
+                    <button class="check-btn" id="downloadCsvBtn" style="margin-top: 10px; display: none;" data-i18n-key="downloadCsvBtn">Download Results as CSV</button>
                     <div class="results" id="results"></div>
                 </div>
             </div>
@@ -101,4 +99,3 @@
     <script src="sidepanel.js"></script>
 </body>
 </html>
-
