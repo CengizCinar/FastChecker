@@ -1,61 +1,40 @@
-// NIHAI SÜRÜM 5.0: "GÜVENİLİR BAĞLANTI"
-// Bu versiyon, her işlem öncesi WebSocket bağlantısını kontrol eder ve
-// gerekirse yeniden kurarak mesajların her zaman alınmasını garantiler.
+// NIHAI SÜRÜM 8.0: "DURDURMA ÖZELLİĞİ"
+// Kullanıcının işlemi iptal etmesini sağlayan "Durdur" özelliği eklendi.
 
 importScripts('sp-api-helper.js');
 
-let ws; // WebSocket nesnesini global olarak tanımla
+let ws;
+let isCheckStopped = false; // İşlemin durdurulup durdurulmadığını takip eden bayrak
 
 // --- WEBSOCKET BAĞLANTI YÖNETİMİ ---
 function connectWebSocket() {
-    // Eğer bağlantı zaten varsa veya kuruluyorsa, tekrar deneme.
     if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
         console.log("BACKGROUND: WebSocket bağlantısı zaten aktif.");
         return;
     }
-
     const wsUrl = "wss://fastcheckerwebsocket.glitch.me";
     ws = new WebSocket(wsUrl);
-
-    ws.onopen = () => {
-        console.log("BACKGROUND: WebSocket bağlantısı başarıyla kuruldu.");
-    };
-
+    ws.onopen = () => console.log("BACKGROUND: WebSocket bağlantısı başarıyla kuruldu.");
     ws.onmessage = async (event) => {
         try {
             const msg = JSON.parse(event.data);
             if (msg.type === 'manual-result' && msg.asin && msg.manual_status) {
                 console.log("BACKGROUND: Manuel sonuç alındı:", msg);
-                
-                // Gelen sonucu kalıcı hafızaya kaydet
                 const { manualResultsStore = {} } = await chrome.storage.local.get('manualResultsStore');
                 manualResultsStore[msg.asin] = msg.manual_status;
                 await chrome.storage.local.set({ manualResultsStore });
                 console.log(`BACKGROUND: ${msg.asin} durumu (${msg.manual_status}) kalıcı hafızaya kaydedildi.`);
-
-                // Canlı güncelleme için sonucu sidepanel'e ilet
                 chrome.runtime.sendMessage({ action: 'manualResult', result: msg });
             }
-        } catch (e) {
-            console.error('BACKGROUND: WebSocket mesajı işlenemedi:', e);
-        }
+        } catch (e) { console.error('BACKGROUND: WebSocket mesajı işlenemedi:', e); }
     };
-
-    ws.onclose = () => {
-        console.warn("BACKGROUND: WebSocket bağlantısı koptu, 10 sn sonra tekrar denenecek.");
-        ws = null; // Bağlantı nesnesini temizle
-        setTimeout(connectWebSocket, 10000);
-    };
-
-    ws.onerror = (err) => {
-        console.error("BACKGROUND: WebSocket hatası:", err);
-        ws.close(); // Hata durumunda bağlantıyı kapat, onclose yeniden bağlanmayı tetikler.
-    };
+    ws.onclose = () => { console.warn("BACKGROUND: WebSocket koptu, 10 sn sonra tekrar denenecek."); ws = null; setTimeout(connectWebSocket, 10000); };
+    ws.onerror = (err) => { console.error("BACKGROUND: WebSocket hatası:", err); ws.close(); };
 }
 
 // --- ANA İŞLEVLER ---
 chrome.runtime.onInstalled.addListener(connectWebSocket);
-chrome.runtime.onStartup.addListener(connectWebSocket); // Tarayıcı açıldığında da bağlan
+chrome.runtime.onStartup.addListener(connectWebSocket);
 
 chrome.action.onClicked.addListener((tab) => {
     chrome.sidePanel.open({ tabId: tab.id });
@@ -63,12 +42,18 @@ chrome.action.onClicked.addListener((tab) => {
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     if (request.action === 'checkAsin') {
-        // Her yeni kontrol talebinde, WebSocket bağlantısını garantile!
+        isCheckStopped = false; // Her yeni kontrolde bayrağı sıfırla
         console.log("BACKGROUND: 'checkAsin' talebi alındı, WebSocket bağlantısı kontrol ediliyor...");
-        connectWebSocket(); // Bu fonksiyon, bağlantı yoksa yeniden kurar.
-        
+        connectWebSocket();
         handleAsinCheck(request.data, sendResponse);
-        return true; // Asenkron yanıt için
+        return true;
+    }
+    // YENİ: Durdurma mesajını dinle
+    if (request.action === 'stopCheck') {
+        console.log("BACKGROUND: 'stopCheck' talebi alındı. Tüm işlemler durduruluyor.");
+        isCheckStopped = true;
+        sendResponse({ success: true });
+        return true;
     }
 });
 
@@ -79,6 +64,13 @@ async function handleAsinCheck(data, sendResponse) {
         const postaKutusuAdresi = "https://fastcheckerwebsocket.glitch.me/mektup-at";
 
         for (let i = 0; i < asins.length; i++) {
+            // YENİ: Her döngüde durdurma bayrağını kontrol et
+            if (isCheckStopped) {
+                console.log(`BACKGROUND: İşlem ${i}. ASIN'de kullanıcı tarafından durduruldu.`);
+                chrome.runtime.sendMessage({ action: 'asinCheckDone', stopped: true });
+                return; // Döngüden ve fonksiyondan çık
+            }
+
             const asin = asins[i];
             let result = await spApiHelper.checkASINSellability(asin, credentials, sellerId, marketplace);
             
@@ -97,7 +89,7 @@ async function handleAsinCheck(data, sendResponse) {
                 await new Promise(resolve => setTimeout(resolve, 500));
             }
         }
-        chrome.runtime.sendMessage({ action: 'asinCheckDone' });
+        chrome.runtime.sendMessage({ action: 'asinCheckDone', stopped: false });
         sendResponse({ success: true });
     } catch (error) {
         sendResponse({ success: false, error: error.message });
