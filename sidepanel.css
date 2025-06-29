@@ -438,3 +438,27 @@ body {
         transform: translateY(0);
     }
 }
+/* YENİ DURDUR BUTONU STİLİ */
+.stop-btn {
+    width: 100%;
+    padding: 10px 0;
+    background: linear-gradient(90deg, #ff6b6b 0%, #e55656 100%);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s, transform 0.2s;
+    box-shadow: 0 2px 12px rgba(229, 86, 86, 0.15);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-top: 6px;
+    margin-bottom: 6px;
+}
+
+.stop-btn:hover {
+    background: linear-gradient(90deg, #e55656 0%, #c44141 100%);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 18px rgba(229, 86, 86, 0.25);
+}
